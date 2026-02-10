@@ -1,0 +1,9 @@
+{
+  "name": "NadLabs",
+  "description": "AI+ creative studio for the Monad ecosystem. Generate content, blueprint builds, and hand off a Nad.fun token launch payload.",
+  "logo": "/logo.svg",
+  "favorcoin": {
+    "icon": "/logo.svg"
+  },
+  "requestFramePermissions": []
+}
