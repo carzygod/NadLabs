@@ -2,10 +2,23 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Idea, Blueprint, AISettings } from '../types';
 import { generateContractCode, generateFrontendPrompt } from '../services/ai';
 import { X, Code, Terminal, UploadCloud, Cpu, FileText, CheckCircle2, Copy, Download, ExternalLink, ArrowLeft, Rocket } from 'lucide-react';
-import { useConnectorClient, useChainId, useAccount } from 'wagmi';
+import { useConnectorClient, usePublicClient, useChainId, useAccount } from 'wagmi';
 import { monadTestnet } from 'wagmi/chains';
+import type { Address } from 'viem';
+import { formatEther, parseEther } from 'viem';
 import { PDFDocument, StandardFonts, rgb, PDFFont } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
+import {
+    NADFUN_CONTRACTS,
+    NADFUN_NETWORK,
+    bondingCurveRouterAbi,
+    uploadImage,
+    uploadMetadata,
+    mineSalt,
+    getFeeConfig,
+    getInitialBuyAmountOut,
+    parseCurveCreateFromReceipt,
+} from '../services/nadfun';
 
 interface BlueprintModalProps {
     idea: Idea;
@@ -264,12 +277,6 @@ const hashString = (value: string) => {
     return Math.abs(hash);
 };
 
-const randomHex = (bytes: number) => {
-    const buf = new Uint8Array(bytes);
-    crypto.getRandomValues(buf);
-    return `0x${Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('')}`;
-};
-
 const buildLogoSvg = (seed: number) => {
     const palette = ['#8B5CF6', '#A78BFA', '#7C3AED', '#6D28D9', '#C4B5FD', '#5B21B6'];
     const bg = palette[seed % palette.length];
@@ -412,6 +419,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
     const { data: walletClient } = useConnectorClient();
     const { isConnected, address } = useAccount();
     const chainId = useChainId();
+    const publicClient = usePublicClient();
     const buildLogsKey = `nadlabs_builder_logs_${idea.id}`;
     const builderStateKey = `nadlabs_builder_state_${idea.id}`;
     const getStoredBuilderState = () => {
@@ -439,6 +447,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
         twitter: storedBuilder?.tokenForm?.twitter || 'https://x.com/',
         telegram: storedBuilder?.tokenForm?.telegram || 'https://t.me/',
         website: storedBuilder?.tokenForm?.website || 'https://www.com',
+        initialBuyMon: storedBuilder?.tokenForm?.initialBuyMon || '0.1',
         customLogoData: storedBuilder?.tokenForm?.customLogoData || '',
         useCustomLogo: storedBuilder?.tokenForm?.useCustomLogo ?? false,
         dryRun: storedBuilder?.tokenForm?.dryRun ?? false,
@@ -449,6 +458,8 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
         liquidityPercent: storedBuilder?.tokenForm?.liquidityPercent ?? 0,
         beneficiaryAddress: storedBuilder?.tokenForm?.beneficiaryAddress || '',
     });
+    const [packedLaunch, setPackedLaunch] = useState<any>(storedBuilder?.packedLaunch ?? null);
+    const [isPacking, setIsPacking] = useState(false);
     const [buildLogs, setBuildLogs] = useState<string[]>(() => {
         if (typeof window === 'undefined') return [];
         const stored = window.localStorage.getItem(buildLogsKey);
@@ -465,7 +476,17 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
     const [txHash, setTxHash] = useState<string | null>(null);
     const blueprintMarkdown = useMemo(() => blueprint ? blueprintToMarkdown(idea, blueprint) : '', [blueprint, idea]);
     const previewTitle = buildStep === 2 ? t.frontend_prompt : buildStep === 3 ? t.deploy_title : t.gen_assets;
-    const previewCopyPayload = buildStep === 1 ? contractCode : buildStep === 2 ? frontendPrompt : '';
+    const safeJsonStringify = (value: any) => {
+        return JSON.stringify(value, (_key, v) => (typeof v === 'bigint' ? v.toString() : v), 2);
+    };
+
+    const previewCopyPayload = buildStep === 1
+        ? contractCode
+        : buildStep === 2
+            ? frontendPrompt
+            : buildStep === 3 && packedLaunch
+                ? safeJsonStringify(packedLaunch)
+                : '';
     const vibeTargets = [
         { label: t.open_claude, url: 'https://www.anthropic.com/claude-code/' },
         { label: t.open_codex, url: 'https://openai.com/codex/' },
@@ -496,6 +517,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
                 twitter: stored?.tokenForm?.twitter || 'https://x.com/',
                 telegram: stored?.tokenForm?.telegram || 'https://t.me/',
                 website: stored?.tokenForm?.website || 'https://www.com',
+                initialBuyMon: stored?.tokenForm?.initialBuyMon || '0.1',
                 customLogoData: stored?.tokenForm?.customLogoData || '',
                 useCustomLogo: stored?.tokenForm?.useCustomLogo ?? false,
                 dryRun: stored?.tokenForm?.dryRun ?? false,
@@ -506,6 +528,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
                 liquidityPercent: stored?.tokenForm?.liquidityPercent ?? 0,
                 beneficiaryAddress: stored?.tokenForm?.beneficiaryAddress || '',
             });
+            setPackedLaunch(stored?.packedLaunch ?? null);
         } else {
             setBuildStep(0);
             setContractCode('');
@@ -521,6 +544,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
                 twitter: 'https://x.com/',
                 telegram: 'https://t.me/',
                 website: 'https://www.com',
+                initialBuyMon: '0.1',
                 customLogoData: '',
                 useCustomLogo: false,
                 dryRun: false,
@@ -531,6 +555,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
                 liquidityPercent: 0,
                 beneficiaryAddress: '',
             });
+            setPackedLaunch(null);
         }
 
         if (typeof window !== 'undefined') {
@@ -563,6 +588,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
             logos,
             selectedLogo,
             tokenForm,
+            packedLaunch,
         };
         window.localStorage.setItem(builderStateKey, JSON.stringify(payload));
     }, [
@@ -573,6 +599,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
         logos,
         selectedLogo,
         tokenForm,
+        packedLaunch,
         builderStateKey,
     ]);
 
@@ -665,6 +692,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
             twitter: prev.twitter || 'https://x.com/',
             telegram: prev.telegram || 'https://t.me/',
             website: prev.website || 'https://www.com',
+            initialBuyMon: prev.initialBuyMon || '0.1',
             customLogoData: prev.customLogoData || '',
             useCustomLogo: prev.useCustomLogo ?? false,
             dryRun: prev.dryRun ?? false,
@@ -677,122 +705,205 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
         }));
     }, [address, buildStep, idea, logos.length]);
 
-    const handleMintChaos = () => {
-        if (isMinting) return;
-        setIsMinting(true);
-        const launch = async () => {
-            try {
-                if (!isConnected || !address) {
-                    addToLog('Wallet not connected. Please connect to launch.');
-                    return;
-                }
-                if (!walletClient) {
-                    addToLog('Wallet client unavailable. Please reconnect.');
-                    return;
-                }
-                if (chainId !== monadTestnet.id) {
-                    addToLog('Wrong network. Please switch to Monad Testnet.');
-                    return;
-                }
+    const packLaunchTx = async () => {
+        if (isPacking) return;
+        setIsPacking(true);
+        try {
+            if (!isConnected || !address) {
+                addToLog('Wallet not connected. Please connect to launch.');
+                return;
+            }
+            if (!publicClient) {
+                addToLog('Public client unavailable.');
+                return;
+            }
+            if (chainId !== monadTestnet.id) {
+                addToLog('Wrong network. Please switch to Monad Testnet.');
+                return;
+            }
 
-                addToLog('Authorizing wallet...');
+            addToLog('Authorizing wallet...');
+            if (walletClient) {
                 await ensureWalletAuthorized(walletClient);
+            }
 
-                const imageData = tokenForm.useCustomLogo ? tokenForm.customLogoData : logos[selectedLogo] || '';
-                const rawBlob = dataUrlToBlob(imageData);
-                if (!rawBlob) {
-                    addToLog('Invalid logo data.');
-                    return;
-                }
-                const imageBlob = rawBlob.type === 'image/svg+xml'
-                    ? await svgToPngBlob(rawBlob, 512)
-                    : rawBlob;
+            const imageData = tokenForm.useCustomLogo ? tokenForm.customLogoData : logos[selectedLogo] || '';
+            const rawBlob = dataUrlToBlob(imageData);
+            if (!rawBlob) {
+                addToLog('Invalid logo data.');
+                return;
+            }
+            const imageBlob = rawBlob.type === 'image/svg+xml'
+                ? await svgToPngBlob(rawBlob, 512)
+                : rawBlob;
 
-                const trimmedName = tokenForm.name.trim();
-                if (!trimmedName || trimmedName.length > 20) {
-                    addToLog('Token name is required and must be 1-20 characters.');
-                    return;
-                }
-                const trimmedSymbol = tokenForm.symbol.trim();
-                if (!trimmedSymbol || trimmedSymbol.length > 10) {
-                    addToLog('Token symbol is required and must be 1-10 characters.');
-                    return;
-                }
+            const trimmedName = tokenForm.name.trim();
+            if (!trimmedName || trimmedName.length > 20) {
+                addToLog('Token name is required and must be 1-20 characters.');
+                return;
+            }
+            const trimmedSymbol = tokenForm.symbol.trim();
+            if (!trimmedSymbol || trimmedSymbol.length > 10) {
+                addToLog('Token symbol is required and must be 1-10 characters.');
+                return;
+            }
 
-                const taxRateBps = Math.round((Number(tokenForm.taxRatePercent) || 0) * 100);
-                const fundsBps = Math.round((Number(tokenForm.fundsPercent) || 0) * 100);
-                const burnBps = Math.round((Number(tokenForm.burnPercent) || 0) * 100);
-                const holdersBps = Math.round((Number(tokenForm.holdersPercent) || 0) * 100);
-                const liquidityBps = Math.round((Number(tokenForm.liquidityPercent) || 0) * 100);
+            let initialBuyAmount = 0n;
+            try {
+                const raw = String(tokenForm.initialBuyMon || '0').trim();
+                initialBuyAmount = raw ? parseEther(raw) : 0n;
+            } catch {
+                addToLog('Invalid initial buy amount. Use a number like 0, 0.1, 1.25');
+                return;
+            }
 
-                const taxPayload = taxRateBps > 0 ? {
-                    taxRateBps,
-                    fundsBps,
-                    burnBps,
-                    holdersBps,
-                    liquidityBps,
-                    beneficiaryAddress: tokenForm.beneficiaryAddress,
-                } : null;
+            addToLog('Nad.fun: uploading image...');
+            const imageRes = await uploadImage(imageBlob, imageBlob.type, NADFUN_NETWORK);
 
-                // Temporary: simulate "tx packing" with fake data (no Nad.fun API calls, no on-chain tx).
-                const packedTx = {
-                    chainId: monadTestnet.id,
-                    createArg: randomHex(128),
-                    signature: randomHex(65),
-                    factory: randomHex(20),
-                    value: '0',
-                };
+            addToLog('Nad.fun: uploading metadata...');
+            const metadataRes = await uploadMetadata({
+                imageUri: imageRes.imageUri,
+                name: trimmedName,
+                symbol: trimmedSymbol,
+                description: tokenForm.description,
+                website: tokenForm.website,
+                twitter: tokenForm.twitter,
+                telegram: tokenForm.telegram,
+            }, NADFUN_NETWORK);
 
-                const payload = {
-                    launchpad: 'Nad.fun',
-                    chain: 'Monad Testnet',
-                    token: {
+            addToLog('Nad.fun: mining salt...');
+            const saltRes = await mineSalt({
+                creator: address as Address,
+                name: trimmedName,
+                symbol: trimmedSymbol,
+                metadataUri: metadataRes.metadataUri,
+            }, NADFUN_NETWORK);
+
+            addToLog('Reading deploy fee...');
+            const feeConfig = await getFeeConfig(publicClient, NADFUN_NETWORK);
+
+            let minTokens = 0n;
+            if (initialBuyAmount > 0n) {
+                addToLog('Calculating initial buy amount out...');
+                minTokens = await getInitialBuyAmountOut(publicClient, initialBuyAmount, NADFUN_NETWORK);
+            }
+
+            const totalValue = feeConfig.deployFeeAmount + initialBuyAmount;
+
+            const packed = {
+                network: NADFUN_NETWORK,
+                apiBaseUrl: 'nad.fun',
+                contracts: NADFUN_CONTRACTS[NADFUN_NETWORK],
+                image: { imageUri: imageRes.imageUri, isNsfw: imageRes.isNsfw, mime: imageBlob.type, bytes: imageBlob.size },
+                metadata: { metadataUri: metadataRes.metadataUri, isNsfw: metadataRes.metadata.isNsfw },
+                salt: { salt: saltRes.salt, predictedTokenAddress: saltRes.address },
+                fee: { deployFeeAmount: feeConfig.deployFeeAmount.toString(), deployFeeMon: formatEther(feeConfig.deployFeeAmount) },
+                initialBuy: { amount: initialBuyAmount.toString(), amountMon: formatEther(initialBuyAmount) },
+                minTokens: minTokens.toString(),
+                tx: {
+                    to: NADFUN_CONTRACTS[NADFUN_NETWORK].BONDING_CURVE_ROUTER,
+                    function: 'create',
+                    args: {
                         name: trimmedName,
                         symbol: trimmedSymbol,
-                        totalSupply: tokenForm.supply,
-                        description: tokenForm.description,
-                        twitter: tokenForm.twitter,
-                        telegram: tokenForm.telegram,
-                        website: tokenForm.website,
+                        tokenURI: metadataRes.metadataUri,
+                        amountOut: minTokens.toString(),
+                        salt: saltRes.salt,
+                        actionId: 1,
                     },
-                    tax: taxPayload,
-                    logo: {
-                        mime: imageBlob.type,
-                        bytes: imageBlob.size,
-                        source: tokenForm.useCustomLogo ? 'custom' : 'auto',
-                    },
-                    packedTx,
-                };
+                    value: totalValue.toString(),
+                    valueMon: formatEther(totalValue),
+                },
+                ui: {
+                    note: 'Packed tx is ready. Next step: sign & send in your wallet.',
+                    supplyFieldNotUsed: tokenForm.supply,
+                },
+            };
 
-                try {
-                    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-                        await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
-                        addToLog('Nad.fun launch payload copied to clipboard.');
-                    } else {
-                        addToLog('Launch payload ready (clipboard unavailable in this environment).');
-                    }
-                } catch {
-                    addToLog('Launch payload ready (failed to copy to clipboard).');
-                }
+            setPackedLaunch(packed);
+            addToLog(`Packed create tx. Value: ${formatEther(totalValue)} MON`);
+        } catch (error: any) {
+            addToLog(`Pack failed: ${error?.message || 'Unknown error'}`);
+        } finally {
+            setIsPacking(false);
+        }
+    };
 
-                const fakeHash = randomHex(32);
-                setTxHash(fakeHash);
-                addToLog(`Simulated tx packed: ${fakeHash}`);
-
-                try {
-                    const url = 'https://nad.fun';
-                    window.open(url, '_blank', 'noopener,noreferrer');
-                    addToLog('Opened Nad.fun in a new tab. Paste the payload to complete launch.');
-                } catch {
-                    addToLog('Open Nad.fun manually: https://nad.fun');
-                }
-            } catch (error: any) {
-                addToLog(`Launch failed: ${error?.message || 'Unknown error'}`);
-            } finally {
-                setIsMinting(false);
+    const signAndLaunch = async () => {
+        if (isMinting) return;
+        setIsMinting(true);
+        try {
+            if (!packedLaunch) {
+                addToLog('No packed tx found. Pack the tx first.');
+                return;
             }
-        };
-        launch();
+            if (!walletClient) {
+                addToLog('Wallet client unavailable. Please reconnect.');
+                return;
+            }
+            if (!publicClient) {
+                addToLog('Public client unavailable.');
+                return;
+            }
+            if (!isConnected || !address) {
+                addToLog('Wallet not connected. Please connect to launch.');
+                return;
+            }
+            if (chainId !== monadTestnet.id) {
+                addToLog('Wrong network. Please switch to Monad Testnet.');
+                return;
+            }
+            if (tokenForm.dryRun) {
+                addToLog('DRY RUN enabled. Skipping signature + send.');
+                return;
+            }
+
+            const value = BigInt(packedLaunch?.tx?.value || '0');
+            const args = packedLaunch?.tx?.args;
+            if (!args?.tokenURI || !args?.salt) {
+                addToLog('Packed tx missing fields. Re-pack and try again.');
+                return;
+            }
+
+            addToLog('Requesting wallet signature...');
+            const hash = await walletClient.writeContract({
+                address: NADFUN_CONTRACTS[NADFUN_NETWORK].BONDING_CURVE_ROUTER,
+                abi: bondingCurveRouterAbi,
+                functionName: 'create',
+                args: [
+                    {
+                        name: String(args.name),
+                        symbol: String(args.symbol),
+                        tokenURI: String(args.tokenURI),
+                        amountOut: BigInt(args.amountOut || '0'),
+                        salt: args.salt as `0x${string}`,
+                        actionId: 1,
+                    },
+                ],
+                value,
+                chain: monadTestnet,
+                account: address as Address,
+            });
+
+            setTxHash(hash);
+            addToLog(`Tx sent: ${hash}`);
+
+            const receipt = await publicClient.waitForTransactionReceipt({ hash });
+            const created = parseCurveCreateFromReceipt(receipt);
+            if (created) {
+                addToLog(`Token deployed: ${created.token}`);
+                addToLog(`Pool: ${created.pool}`);
+            } else {
+                addToLog('Tx confirmed. Token address not found in logs (CurveCreate).');
+            }
+
+            // Clear packed data after a successful send to avoid double-launch.
+            setPackedLaunch(null);
+        } catch (error: any) {
+            addToLog(`Launch failed: ${error?.message || 'Unknown error'}`);
+        } finally {
+            setIsMinting(false);
+        }
     };
 
 
@@ -1217,6 +1328,28 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
                                                 </div>
                                                 <div className="space-y-3">
                                                     <div className="text-gray-500">{t.launch_config}</div>
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <label className="block col-span-2">
+                                                            <span className="text-gray-500">{t.initial_buy}</span>
+                                                            <input
+                                                                value={tokenForm.initialBuyMon}
+                                                                onChange={(e) => setTokenForm(prev => ({ ...prev, initialBuyMon: e.target.value }))}
+                                                                className="mt-1 w-full bg-black/40 border border-white/10 rounded px-3 py-2 text-gray-200"
+                                                                placeholder="0.1"
+                                                            />
+                                                            <div className="text-[10px] text-gray-500 mt-1">
+                                                                Deploy fee is added automatically. Initial buy is optional.
+                                                            </div>
+                                                        </label>
+                                                        <label className="flex items-center gap-2 text-xs text-gray-400 col-span-2">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={Boolean(tokenForm.dryRun)}
+                                                                onChange={(e) => setTokenForm(prev => ({ ...prev, dryRun: e.target.checked }))}
+                                                            />
+                                                            <span>{t.launch_dryrun}</span>
+                                                        </label>
+                                                    </div>
                                                 </div>
                                             </div>
                                         )}
@@ -1296,11 +1429,23 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
                                         <ArrowLeft className="w-4 h-4" /> {t.prev_step}
                                     </button>
                                     <button
-                                        onClick={handleMintChaos}
-                                        disabled={isMinting}
+                                        onClick={packLaunchTx}
+                                        disabled={isPacking}
+                                        className="flex-1 py-4 bg-white/10 text-white font-bold font-mono rounded border border-white/10 hover:border-white/40 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                                    >
+                                        <Cpu className="w-4 h-4" /> {t.pack_tx}
+                                        {packedLaunch && (
+                                            <span className="text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-full border border-[#A78BFA]/40 text-[#A78BFA] bg-[#A78BFA]/10">
+                                                READY
+                                            </span>
+                                        )}
+                                    </button>
+                                    <button
+                                        onClick={signAndLaunch}
+                                        disabled={isMinting || !packedLaunch || Boolean(tokenForm.dryRun)}
                                         className="flex-1 py-4 bg-gradient-to-r from-[#A78BFA] to-[#6D28D9] text-white font-bold font-mono rounded hover:brightness-110 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
                                     >
-                                        <Rocket className="w-4 h-4" /> {t.min_chaos}
+                                        <Rocket className="w-4 h-4" /> {t.sign_launch}
                                     </button>
                                 </div>
                             )}
