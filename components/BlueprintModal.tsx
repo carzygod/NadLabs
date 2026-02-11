@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Idea, Blueprint, AISettings } from '../types';
-import { generateContractCode, generateFrontendPrompt } from '../services/ai';
+import { generateContractCode, generateFrontendPrompt, generateTokenLogoPngSet } from '../services/ai';
 import { X, Code, Terminal, UploadCloud, Cpu, FileText, CheckCircle2, Copy, Download, ExternalLink, ArrowLeft, Rocket, Twitter, Send } from 'lucide-react';
 import { usePublicClient, useChainId, useAccount, useWriteContract } from 'wagmi';
 import { monad } from 'wagmi/chains';
@@ -277,38 +277,47 @@ const hashString = (value: string) => {
     return Math.abs(hash);
 };
 
-const buildLogoSvg = (seed: number) => {
+const buildFallbackLogoPng = (seed: number) => {
+    if (typeof window === 'undefined') return '';
     const palette = ['#8B5CF6', '#A78BFA', '#7C3AED', '#6D28D9', '#C4B5FD', '#5B21B6'];
     const bg = palette[seed % palette.length];
     const fg = palette[(seed + 2) % palette.length];
     const accent = palette[(seed + 4) % palette.length];
-    const shapeOffset = 12 + (seed % 10);
-    const ringSize = 96 + (seed % 12);
-    return `
-<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
-  <defs>
-    <linearGradient id="g${seed}" x1="0" x2="1" y1="0" y2="1">
-      <stop offset="0%" stop-color="${bg}" />
-      <stop offset="100%" stop-color="${accent}" />
-    </linearGradient>
-  </defs>
-  <rect width="160" height="160" rx="32" fill="url(#g${seed})" opacity="0.9" />
-  <circle cx="80" cy="80" r="${ringSize / 2}" fill="none" stroke="${fg}" stroke-width="8" opacity="0.9"/>
-  <rect x="${shapeOffset}" y="${shapeOffset}" width="${160 - shapeOffset * 2}" height="${160 - shapeOffset * 2}" rx="22" fill="none" stroke="${accent}" stroke-width="4" opacity="0.8"/>
-  <circle cx="${50 + (seed % 20)}" cy="${60 + (seed % 30)}" r="10" fill="${fg}" />
-  <circle cx="${110 - (seed % 18)}" cy="${95 - (seed % 25)}" r="6" fill="${accent}" />
-</svg>
-    `.trim();
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+
+    const gradient = ctx.createLinearGradient(0, 0, 512, 512);
+    gradient.addColorStop(0, bg);
+    gradient.addColorStop(1, accent);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 512, 512);
+
+    ctx.strokeStyle = fg;
+    ctx.lineWidth = 22;
+    ctx.beginPath();
+    ctx.arc(256, 256, 160 + (seed % 30), 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = '#05050566';
+    ctx.beginPath();
+    ctx.arc(256, 256, 92 + (seed % 20), 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffffcc';
+    ctx.beginPath();
+    ctx.arc(190 + (seed % 24), 190 + (seed % 24), 28, 0, Math.PI * 2);
+    ctx.fill();
+
+    return canvas.toDataURL('image/png');
 };
 
-const buildLogoSet = (ideaTitle: string) => {
+const buildFallbackLogoSet = (ideaTitle: string) => {
     const base = hashString(ideaTitle);
     return Array.from({ length: 4 }).map((_, idx) => {
-        const svg = buildLogoSvg(base + idx * 17);
-        const encoded = typeof window !== 'undefined'
-            ? btoa(unescape(encodeURIComponent(svg)))
-            : '';
-        return `data:image/svg+xml;base64,${encoded}`;
+        return buildFallbackLogoPng(base + idx * 17);
     });
 };
 
@@ -684,11 +693,33 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
     }, [aiConfig, buildStep, contractCode, frontendPrompt, idea]);
 
     useEffect(() => {
+        if (buildStep !== 3 || logos.length > 0) return;
+        let cancelled = false;
+        const run = async () => {
+            addToLog('Agent: generating PNG logos with LLM...');
+            try {
+                const generated = await generateTokenLogoPngSet(idea, aiConfig, 4);
+                if (cancelled) return;
+                const clean = generated.filter((item) => typeof item === 'string' && item.startsWith('data:image/png;base64,'));
+                if (clean.length === 0) throw new Error('No PNG logos generated.');
+                setLogos(clean);
+                setSelectedLogo(0);
+                addToLog(`LLM logo generation complete (${clean.length} PNG).`);
+            } catch (error: any) {
+                if (cancelled) return;
+                addToLog(`LLM logo generation failed, using fallback PNG set. ${error?.message || ''}`.trim());
+                setLogos(buildFallbackLogoSet(idea.title));
+                setSelectedLogo(0);
+            }
+        };
+        run();
+        return () => {
+            cancelled = true;
+        };
+    }, [aiConfig, buildStep, idea, logos.length]);
+
+    useEffect(() => {
         if (buildStep !== 3) return;
-        if (logos.length === 0) {
-            setLogos(buildLogoSet(idea.title));
-            setSelectedLogo(0);
-        }
         setTokenForm(prev => ({
             name: prev.name || idea.title,
             symbol: prev.symbol || idea.title.replace(/[^A-Za-z]/g, '').slice(0, 4).toUpperCase() || 'NAD',
@@ -708,7 +739,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
             liquidityPercent: prev.liquidityPercent ?? 0,
             beneficiaryAddress: prev.beneficiaryAddress || address || '',
         }));
-    }, [address, buildStep, idea, logos.length]);
+    }, [address, buildStep, idea]);
 
     const packLaunchTx = async () => {
         if (isPacking) return;

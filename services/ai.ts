@@ -280,3 +280,81 @@ ${contractCode}`;
 
   return callChatCompletion(messages, apiConfig, 0.4, 900);
 };
+
+const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+};
+
+const callImageGenerationPng = async (prompt: string, apiConfig?: AISettings): Promise<string> => {
+  const { apiKey, baseUrl } = buildAiConfig(apiConfig);
+  const url = `${baseUrl}/images/generations`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-image-1',
+      prompt,
+      size: '512x512',
+      quality: 'medium',
+      n: 1,
+      response_format: 'b64_json',
+    }),
+  });
+
+  if (!response.ok) {
+    const payload = await response.text();
+    throw new AIError(`Image generation failed (${response.status}): ${payload}`, `IMG_HTTP_${response.status}`);
+  }
+
+  const payload = await response.json();
+  const item = payload?.data?.[0];
+  if (item?.b64_json) {
+    return `data:image/png;base64,${item.b64_json}`;
+  }
+  if (item?.url) {
+    const imageRes = await fetch(item.url);
+    if (!imageRes.ok) throw new AIError('Image URL fetch failed.', 'IMG_FETCH_FAIL');
+    const buffer = await imageRes.arrayBuffer();
+    return `data:image/png;base64,${arrayBufferToBase64(buffer)}`;
+  }
+  throw new AIError('Image response missing data.', 'IMG_NO_DATA');
+};
+
+export const generateTokenLogoPngSet = async (
+  idea: Idea,
+  apiConfig?: AISettings,
+  count = 4
+): Promise<string[]> => {
+  const safeCount = Math.max(1, Math.min(4, count));
+  const directions = [
+    'bold mascot emblem',
+    'minimal geometric mark',
+    'futuristic monogram badge',
+    'playful meme-style icon',
+  ];
+
+  const tasks = Array.from({ length: safeCount }).map(async (_, idx) => {
+    const direction = directions[idx % directions.length];
+    const prompt = [
+      `Create a token logo as a clean PNG icon for ${idea.title}.`,
+      `Symbol hint: ${idea.title.replace(/[^A-Za-z]/g, '').slice(0, 6).toUpperCase() || 'NAD'}.`,
+      `Style: ${direction}.`,
+      `Theme: Monad ecosystem, purple and deep purple palette, high contrast.`,
+      `Requirements: centered icon, no text outside logo, transparent-friendly composition, crisp edges.`,
+    ].join(' ');
+    return callImageGenerationPng(prompt, apiConfig);
+  });
+
+  return Promise.all(tasks);
+};
