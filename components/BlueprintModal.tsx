@@ -449,6 +449,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
         beneficiaryAddress: storedBuilder?.tokenForm?.beneficiaryAddress || '',
     });
     const [packedLaunch, setPackedLaunch] = useState<any>(storedBuilder?.packedLaunch ?? null);
+    const [launchedToken, setLaunchedToken] = useState<any>(storedBuilder?.launchedToken ?? null);
     const [isPacking, setIsPacking] = useState(false);
     const [buildLogs, setBuildLogs] = useState<string[]>(() => {
         if (typeof window === 'undefined') return [];
@@ -490,6 +491,16 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
         setBuildLogs(prev => [...prev, line]);
     };
 
+    const handleCopyText = async (value: string, okMsg: string, failMsg: string) => {
+        if (!value) return;
+        try {
+            await navigator.clipboard.writeText(value);
+            addToLog(okMsg);
+        } catch {
+            addToLog(failMsg);
+        }
+    };
+
     useEffect(() => {
         const stored = getStoredBuilderState();
         if (stored) {
@@ -519,6 +530,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
                 beneficiaryAddress: stored?.tokenForm?.beneficiaryAddress || '',
             });
             setPackedLaunch(stored?.packedLaunch ?? null);
+            setLaunchedToken(stored?.launchedToken ?? null);
         } else {
             setBuildStep(0);
             setContractCode('');
@@ -546,6 +558,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
                 beneficiaryAddress: '',
             });
             setPackedLaunch(null);
+            setLaunchedToken(null);
         }
 
         if (typeof window !== 'undefined') {
@@ -579,6 +592,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
             selectedLogo,
             tokenForm,
             packedLaunch,
+            launchedToken,
         };
         window.localStorage.setItem(builderStateKey, JSON.stringify(payload));
     }, [
@@ -590,6 +604,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
         selectedLogo,
         tokenForm,
         packedLaunch,
+        launchedToken,
         builderStateKey,
     ]);
 
@@ -916,6 +931,12 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
             });
 
             setTxHash(hash);
+            setLaunchedToken({
+                address: String(packedLaunch?.salt?.predictedTokenAddress || ''),
+                name: String(args.name || ''),
+                symbol: String(args.symbol || ''),
+                logoDataUrl: tokenForm.useCustomLogo ? tokenForm.customLogoData : (logos[selectedLogo] || ''),
+            });
             addToLog(`Tx sent: ${hash}`);
 
             const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -970,6 +991,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
         setIsContractDeploying(false);
         setIsMinting(false);
         setTxHash(null);
+        setLaunchedToken(null);
     };
 
     const handleCustomLogoUpload = (file: File | null) => {
@@ -1008,6 +1030,14 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
     };
 
     const explorerTxUrl = txHash ? `https://monadscan.com/tx/${txHash}` : '';
+    const tokenAddressForDisplay = String(launchedToken?.address || '').trim();
+    const tokenNameForDisplay = String(launchedToken?.name || '').trim();
+    const tokenSymbolForDisplay = String(launchedToken?.symbol || '').trim();
+    const tokenLogoForDisplay = String(launchedToken?.logoDataUrl || '').trim();
+    const nadTokenUrl = tokenAddressForDisplay ? `https://nad.fun/tokens/${tokenAddressForDisplay}` : '';
+    const shareText = tokenAddressForDisplay
+        ? `Just launched ${tokenNameForDisplay} (${tokenSymbolForDisplay}) on Nad.fun. ${nadTokenUrl}`
+        : '';
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
@@ -1489,6 +1519,60 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
                     <div className="bg-[#0A0A0A] border border-white/10 rounded-xl p-6 w-full max-w-md shadow-[0_0_40px_rgba(139,92,246,0.20)]">
                         <h3 className="text-lg font-bold text-white mb-2">{t.tx_title}</h3>
                         <p className="text-xs text-gray-400 font-mono break-all mb-4">{txHash}</p>
+                        {tokenLogoForDisplay && (
+                            <div className="flex justify-center mb-4">
+                                <img
+                                    src={tokenLogoForDisplay}
+                                    alt={tokenSymbolForDisplay || 'Token'}
+                                    className="w-20 h-20 rounded-full border border-[#8B5CF6]/50 object-cover shadow-[0_0_20px_rgba(139,92,246,0.35)]"
+                                />
+                            </div>
+                        )}
+                        {tokenAddressForDisplay && (
+                            <div className="mb-4 rounded-lg border border-white/10 bg-white/5 p-3">
+                                <p className="text-[11px] uppercase tracking-widest text-gray-400 mb-2">{t.tx_token_address}</p>
+                                <button
+                                    onClick={() => handleCopyText(tokenAddressForDisplay, 'Token address copied.', 'Failed to copy token address.')}
+                                    className="w-full text-left text-xs font-mono text-[#C4B5FD] hover:text-white break-all flex items-center justify-between gap-2"
+                                >
+                                    <span>{tokenAddressForDisplay}</span>
+                                    <Copy className="w-4 h-4 shrink-0" />
+                                </button>
+                            </div>
+                        )}
+                        {nadTokenUrl && (
+                            <button
+                                onClick={() => window.open(nadTokenUrl, '_blank', 'noopener,noreferrer')}
+                                className="w-full mb-4 py-2 bg-[#A78BFA] text-black font-bold font-mono rounded hover:brightness-110 transition"
+                            >
+                                {t.tx_view_nad}
+                            </button>
+                        )}
+                        {shareText && (
+                            <div className="mb-4 rounded-lg border border-white/10 bg-white/5 p-3">
+                                <p className="text-[11px] uppercase tracking-widest text-gray-400 mb-3">{t.tx_share}</p>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <button
+                                        onClick={() => window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer')}
+                                        className="py-2 bg-white/10 text-white text-xs font-mono rounded hover:bg-white/20"
+                                    >
+                                        {t.tx_share_x}
+                                    </button>
+                                    <button
+                                        onClick={() => window.open(`https://t.me/share/url?url=${encodeURIComponent(nadTokenUrl)}&text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer')}
+                                        className="py-2 bg-white/10 text-white text-xs font-mono rounded hover:bg-white/20"
+                                    >
+                                        {t.tx_share_telegram}
+                                    </button>
+                                    <button
+                                        onClick={() => handleCopyText(shareText, 'Share text copied.', 'Failed to copy share text.')}
+                                        className="py-2 bg-white/10 text-white text-xs font-mono rounded hover:bg-white/20"
+                                    >
+                                        {t.tx_share_copy}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                         <div className="flex gap-3">
                             <button
                                 onClick={() => setTxHash(null)}
