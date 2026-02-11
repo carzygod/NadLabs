@@ -1,6 +1,6 @@
 import { Ecosystem, Sector } from './types';
 
-export const ECOSYSTEMS: Ecosystem[] = ['Monad Testnet'];
+export const ECOSYSTEMS: Ecosystem[] = ['Monad Mainnet'];
 export const SECTORS: Sector[] = ['Nad.fun', 'AI Agents', 'Memes', 'DeFi', 'Social', 'GameFi', 'Infra', 'NFT'];
 
 export const DEGEN_LABELS = {

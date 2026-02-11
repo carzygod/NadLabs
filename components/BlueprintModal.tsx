@@ -3,7 +3,7 @@ import { Idea, Blueprint, AISettings } from '../types';
 import { generateContractCode, generateFrontendPrompt } from '../services/ai';
 import { X, Code, Terminal, UploadCloud, Cpu, FileText, CheckCircle2, Copy, Download, ExternalLink, ArrowLeft, Rocket } from 'lucide-react';
 import { usePublicClient, useChainId, useAccount, useWriteContract } from 'wagmi';
-import { monadTestnet } from 'wagmi/chains';
+import { monad } from 'wagmi/chains';
 import type { Address } from 'viem';
 import { formatEther, parseEther } from 'viem';
 import { PDFDocument, StandardFonts, rgb, PDFFont } from 'pdf-lib';
@@ -717,8 +717,8 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
                 addToLog('Public client unavailable.');
                 return;
             }
-            if (chainId !== monadTestnet.id) {
-                addToLog('Wrong network. Please switch to Monad Testnet.');
+            if (chainId !== monad.id) {
+                addToLog('Wrong network. Please switch to Monad Mainnet.');
                 return;
             }
 
@@ -792,6 +792,9 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
 
             const packed = {
                 network: NADFUN_NETWORK,
+                creator: address,
+                chainId: monad.id,
+                packedAt: Date.now(),
                 apiBaseUrl: 'nad.fun',
                 contracts: NADFUN_CONTRACTS[NADFUN_NETWORK],
                 image: { imageUri: imageRes.imageUri, isNsfw: imageRes.isNsfw, mime: imageBlob.type, bytes: imageBlob.size },
@@ -845,8 +848,8 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
                 addToLog('Wallet not connected. Please connect to launch.');
                 return;
             }
-            if (chainId !== monadTestnet.id) {
-                addToLog('Wrong network. Please switch to Monad Testnet.');
+            if (chainId !== monad.id) {
+                addToLog('Wrong network. Please switch to Monad Mainnet.');
                 return;
             }
             if (tokenForm.dryRun) {
@@ -854,10 +857,56 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
                 return;
             }
 
+            if (packedLaunch?.creator && String(packedLaunch.creator).toLowerCase() !== String(address).toLowerCase()) {
+                addToLog('Packed tx wallet does not match current wallet. Re-pack tx after switching wallet.');
+                return;
+            }
+            if (packedLaunch?.chainId && Number(packedLaunch.chainId) !== monad.id) {
+                addToLog('Packed tx chain does not match Monad Mainnet. Re-pack tx.');
+                return;
+            }
+
             const value = BigInt(packedLaunch?.tx?.value || '0');
             const args = packedLaunch?.tx?.args;
             if (!args?.tokenURI || !args?.salt) {
                 addToLog('Packed tx missing fields. Re-pack and try again.');
+                return;
+            }
+            if (!/^0x[0-9a-fA-F]{64}$/.test(String(args.salt))) {
+                addToLog('Packed tx salt is invalid. Re-pack and try again.');
+                return;
+            }
+
+            const initialBuyAmount = BigInt(packedLaunch?.initialBuy?.amount || '0');
+            const latestFee = await getFeeConfig(publicClient, NADFUN_NETWORK);
+            const latestRequiredValue = latestFee.deployFeeAmount + initialBuyAmount;
+            if (value < latestRequiredValue) {
+                addToLog(`Packed tx value is outdated (fee changed). Required now: ${formatEther(latestRequiredValue)} MON. Please re-pack.`);
+                return;
+            }
+
+            addToLog('Simulating transaction...');
+            try {
+                await publicClient.simulateContract({
+                    address: NADFUN_CONTRACTS[NADFUN_NETWORK].BONDING_CURVE_ROUTER,
+                    abi: bondingCurveRouterAbi,
+                    functionName: 'create',
+                    args: [
+                        {
+                            name: String(args.name),
+                            symbol: String(args.symbol),
+                            tokenURI: String(args.tokenURI),
+                            amountOut: BigInt(args.amountOut || '0'),
+                            salt: args.salt as `0x${string}`,
+                            actionId: 1,
+                        },
+                    ],
+                    value,
+                    account: address as Address,
+                });
+            } catch (simErr: any) {
+                addToLog(`Simulation failed: ${simErr?.shortMessage || simErr?.message || 'Reverted'}`);
+                addToLog('Likely causes: switched wallet after packing, outdated deploy fee, or invalid salt. Re-pack tx and try again.');
                 return;
             }
 
@@ -877,7 +926,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
                     },
                 ],
                 value,
-                chainId: monadTestnet.id,
+                chainId: monad.id,
                 account: address as Address,
             });
 
@@ -973,7 +1022,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
         downloadFile(`${safeName}.pdf`, blob, 'application/pdf');
     };
 
-    const explorerTxUrl = txHash ? `https://testnet.monadexplorer.com/tx/${txHash}` : '';
+    const explorerTxUrl = txHash ? `https://monadscan.com/tx/${txHash}` : '';
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm">

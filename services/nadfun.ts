@@ -3,7 +3,7 @@ import { decodeEventLog } from 'viem';
 
 export type NadfunNetwork = 'testnet' | 'mainnet';
 
-export const NADFUN_NETWORK: NadfunNetwork = 'testnet';
+export const NADFUN_NETWORK: NadfunNetwork = 'mainnet';
 
 export const NADFUN_API_BASE_URL: Record<NadfunNetwork, string> = {
   testnet: 'https://dev-api.nad.fun',

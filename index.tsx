@@ -4,7 +4,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { getDefaultConfig, RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
 import { WagmiProvider } from 'wagmi';
-import { monadTestnet } from 'wagmi/chains';
+import { monad } from 'wagmi/chains';
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 import {
   metaMaskWallet,
@@ -15,7 +15,7 @@ import {
 const config = getDefaultConfig({
   appName: 'NadLabs',
   projectId: 'YOUR_PROJECT_ID', // Get one at https://cloud.reown.com
-  chains: [monadTestnet],
+  chains: [monad],
   wallets: [
     {
       groupName: 'Recommended',

@@ -36,7 +36,7 @@ const App: React.FC = () => {
   });
   const [config, setConfig] = useState<ForgeConfig>({
     mode: 'TARGETED',
-    ecosystems: ['Monad Testnet'],
+    ecosystems: ['Monad Mainnet'],
     sectors: ['Nad.fun'],
     quantity: 3,
     degenLevel: 20

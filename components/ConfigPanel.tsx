@@ -3,7 +3,7 @@ import { ForgeConfig, Ecosystem, Sector } from '../types';
 import { ECOSYSTEMS, SECTORS } from '../constants';
 import { Settings2, Dice5, Zap } from 'lucide-react';
 import { useAccount, useChainId, useSwitchChain } from 'wagmi';
-import { monadTestnet } from 'wagmi/chains';
+import { monad } from 'wagmi/chains';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 
 interface ConfigPanelProps {
@@ -19,7 +19,7 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ config, setConfig, onGenerate
   const chainId = useChainId();
   const { switchChain, isPending: isSwitching } = useSwitchChain();
   const { openConnectModal } = useConnectModal();
-  const isOnMonad = chainId === monadTestnet.id;
+  const isOnMonad = chainId === monad.id;
 
   const handleAction = () => {
     if (!isConnected) {
@@ -27,7 +27,7 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ config, setConfig, onGenerate
       return;
     }
     if (!isOnMonad) {
-      if (switchChain) switchChain({ chainId: monadTestnet.id });
+      if (switchChain) switchChain({ chainId: monad.id });
       return;
     }
     onGenerate();

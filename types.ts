@@ -1,4 +1,4 @@
-export type Ecosystem = 'Monad Testnet';
+export type Ecosystem = 'Monad Mainnet';
 export type Sector = 'Nad.fun' | 'AI Agents' | 'Memes' | 'DeFi' | 'Social' | 'GameFi' | 'Infra' | 'NFT';
 export type Language = 'en' | 'zh-CN' | 'zh-TW' | 'ru';
 
