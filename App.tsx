@@ -523,7 +523,7 @@ const App: React.FC = () => {
           </a>
           <a
             className="rounded-full bg-white/5 p-2 text-[#8B5CF6] transition hover:bg-white/10"
-            href="https://x.com/carzygod"
+            href="https://x.com/nad_labs"
             target="_blank"
             rel="noreferrer"
             aria-label="X"
