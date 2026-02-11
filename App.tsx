@@ -11,15 +11,10 @@ import SettingsModal from './components/SettingsModal';
 import ErrorModal from './components/ErrorModal';
 import BatchDrawer from './components/BatchDrawer';
 import { Terminal, Zap, Globe, LayoutGrid, GalleryHorizontalEnd, Settings, Github, Twitter } from 'lucide-react';
-import { useAccount } from 'wagmi';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 
 const BATCH_STORAGE_KEY = 'nadlabs_batches';
 const MAX_BATCHES_STORED = 12;
-
-const truncateAddress = (address?: string) => {
-  if (!address) return null;
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
-};
 
 const cloneIdea = (idea: Idea): Idea => ({
   ...idea,
@@ -53,8 +48,6 @@ const App: React.FC = () => {
     return window.matchMedia('(min-width: 1024px)').matches;
   });
   const toggleDrawer = () => setIsDrawerOpen(prev => !prev);
-  const { address, isConnected: isWalletConnected } = useAccount();
-
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [logs, setLogs] = useState<LogMessage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -370,10 +363,9 @@ const App: React.FC = () => {
               <Settings className="w-4 h-4" />
             </button>
 
-            <span className="flex items-center gap-1.5 hidden sm:flex">
-              <div className="w-1.5 h-1.5 rounded-full bg-[#8B5CF6] animate-pulse"></div>
-              {isWalletConnected && address ? truncateAddress(address) : t.navbar.status}
-            </span>
+            <div className="hidden sm:block">
+              <ConnectButton showBalance={false} chainStatus="icon" accountStatus={{ smallScreen: 'avatar', largeScreen: 'full' }} />
+            </div>
           </div>
         </div>
       </nav>
