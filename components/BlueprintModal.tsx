@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Idea, Blueprint, AISettings } from '../types';
 import { generateContractCode, generateFrontendPrompt } from '../services/ai';
 import { X, Code, Terminal, UploadCloud, Cpu, FileText, CheckCircle2, Copy, Download, ExternalLink, ArrowLeft, Rocket } from 'lucide-react';
-import { useConnectorClient, usePublicClient, useChainId, useAccount } from 'wagmi';
+import { usePublicClient, useChainId, useAccount, useWriteContract } from 'wagmi';
 import { monadTestnet } from 'wagmi/chains';
 import type { Address } from 'viem';
 import { formatEther, parseEther } from 'viem';
@@ -416,7 +416,7 @@ const svgToPngBlob = (svgBlob: Blob, size = 512): Promise<Blob> => {
 
 const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClose, t, aiConfig }) => {
     const [activeTab, setActiveTab] = useState<'DOCS' | 'BUILDER'>('DOCS');
-    const { data: walletClient } = useConnectorClient();
+    const { writeContractAsync } = useWriteContract();
     const { isConnected, address } = useAccount();
     const chainId = useChainId();
     const publicClient = usePublicClient();
@@ -837,10 +837,6 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
                 addToLog('No packed tx found. Pack the tx first.');
                 return;
             }
-            if (!walletClient) {
-                addToLog('Wallet client unavailable. Please reconnect.');
-                return;
-            }
             if (!publicClient) {
                 addToLog('Public client unavailable.');
                 return;
@@ -866,7 +862,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
             }
 
             addToLog('Requesting wallet signature...');
-            const hash = await walletClient.writeContract({
+            const hash = await writeContractAsync({
                 address: NADFUN_CONTRACTS[NADFUN_NETWORK].BONDING_CURVE_ROUTER,
                 abi: bondingCurveRouterAbi,
                 functionName: 'create',
@@ -881,7 +877,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
                     },
                 ],
                 value,
-                chain: monadTestnet,
+                chainId: monadTestnet.id,
                 account: address as Address,
             });
 
