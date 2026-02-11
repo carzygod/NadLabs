@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Idea, Blueprint, AISettings } from '../types';
 import { generateContractCode, generateFrontendPrompt } from '../services/ai';
-import { X, Code, Terminal, UploadCloud, Cpu, FileText, CheckCircle2, Copy, Download, ExternalLink, ArrowLeft, Rocket } from 'lucide-react';
+import { X, Code, Terminal, UploadCloud, Cpu, FileText, CheckCircle2, Copy, Download, ExternalLink, ArrowLeft, Rocket, Twitter, Send } from 'lucide-react';
 import { usePublicClient, useChainId, useAccount, useWriteContract } from 'wagmi';
 import { monad } from 'wagmi/chains';
 import type { Address } from 'viem';
@@ -1036,7 +1036,7 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
     const tokenLogoForDisplay = String(launchedToken?.logoDataUrl || '').trim();
     const nadTokenUrl = tokenAddressForDisplay ? `https://nad.fun/tokens/${tokenAddressForDisplay}` : '';
     const shareText = tokenAddressForDisplay
-        ? `Just launched ${tokenNameForDisplay} (${tokenSymbolForDisplay}) on Nad.fun. ${nadTokenUrl}`
+        ? `Just launched ${tokenNameForDisplay} (${tokenSymbolForDisplay}) on Nad.fun via #nadlabs. Build yours at https://nadlabs.fun ${nadTokenUrl}`
         : '';
 
     return (
@@ -1554,21 +1554,27 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
                                 <div className="grid grid-cols-3 gap-2">
                                     <button
                                         onClick={() => window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer')}
-                                        className="py-2 bg-white/10 text-white text-xs font-mono rounded hover:bg-white/20"
+                                        title={t.tx_share_x}
+                                        aria-label={t.tx_share_x}
+                                        className="py-2 bg-white/10 text-white text-xs font-mono rounded hover:bg-white/20 flex items-center justify-center"
                                     >
-                                        {t.tx_share_x}
+                                        <Twitter className="w-4 h-4" />
                                     </button>
                                     <button
                                         onClick={() => window.open(`https://t.me/share/url?url=${encodeURIComponent(nadTokenUrl)}&text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer')}
-                                        className="py-2 bg-white/10 text-white text-xs font-mono rounded hover:bg-white/20"
+                                        title={t.tx_share_telegram}
+                                        aria-label={t.tx_share_telegram}
+                                        className="py-2 bg-white/10 text-white text-xs font-mono rounded hover:bg-white/20 flex items-center justify-center"
                                     >
-                                        {t.tx_share_telegram}
+                                        <Send className="w-4 h-4" />
                                     </button>
                                     <button
                                         onClick={() => handleCopyText(shareText, 'Share text copied.', 'Failed to copy share text.')}
-                                        className="py-2 bg-white/10 text-white text-xs font-mono rounded hover:bg-white/20"
+                                        title={t.tx_share_copy}
+                                        aria-label={t.tx_share_copy}
+                                        className="py-2 bg-white/10 text-white text-xs font-mono rounded hover:bg-white/20 flex items-center justify-center"
                                     >
-                                        {t.tx_share_copy}
+                                        <Copy className="w-4 h-4" />
                                     </button>
                                 </div>
                             </div>
