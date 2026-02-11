@@ -312,16 +312,6 @@ const buildLogoSet = (ideaTitle: string) => {
     });
 };
 
-const ensureWalletAuthorized = async (client: any) => {
-    if (client?.requestAddresses) {
-        return client.requestAddresses();
-    }
-    if (typeof window !== 'undefined' && (window as any).ethereum?.request) {
-        return (window as any).ethereum.request({ method: 'eth_requestAccounts' });
-    }
-    return [];
-};
-
 const signMessageCompat = async (client: any, message: string, account: string) => {
     if (client?.signMessage) {
         return client.signMessage({ message, account });
@@ -720,11 +710,6 @@ const BlueprintModal: React.FC<BlueprintModalProps> = ({ idea, blueprint, onClos
             if (chainId !== monad.id) {
                 addToLog('Wrong network. Please switch to Monad Mainnet.');
                 return;
-            }
-
-            addToLog('Authorizing wallet...');
-            if (walletClient) {
-                await ensureWalletAuthorized(walletClient);
             }
 
             const imageData = tokenForm.useCustomLogo ? tokenForm.customLogoData : logos[selectedLogo] || '';
